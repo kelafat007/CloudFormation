@@ -1,0 +1,444 @@
+2| Create Your First Stack
+In your AWS Console, navigate to CloudFormation:
+
+Click Create Stack
+Select the Template is ready option
+Under Template source, select Upload a template file
+Upload the YAML file that you created or attach the .yml file from the previous step
+Click Next
+___________
+Next, create your Stack Name
+Assign your IAM role
+Stack failure options: Roll back all stack resources
+Leave everything as default and click Next
+Review your template and Click Create stack
+_____________________________________________
+3) Confirm your Apache is installed on your instances.
+
+4). Create Database Tier for your Architecture.
+
+# Create an RDS MySql 5.7 Instance
+Parameters:
+  Owner:
+    Description: Enter the Name of the owner for this Stack.
+    Type: String
+    Default: Name
+  VPC:
+    Description: Select VPC form the available VPCs in your account.
+    Type: AWS::EC2::VPC::Id
+  PrivateSubnet1:
+    Description: Select Private Subnet 1.
+    Type: AWS::EC2::Subnet::Id
+  PrivateSubnet2:
+    Description: Select Private Subnet 2.
+    Type: AWS::EC2::Subnet::Id
+  MasterUsername:
+    Description: Database administration name.
+    Type: String
+    Default: rdsroot
+  MasterUserPassword:
+    NoEcho: 'true'
+    Description: Database administration password.
+    Type: String
+    MinLength: '8'
+    AllowedPattern: "[a-zA-Z0-9!?]*"
+    ConstraintDescription: Must only contain upper and lowercase letters and numbers
+  BackupRetentionPeriod:
+    Description: Enter Backup Retention Period in Days.
+    Type: Number
+    Default: '5'
+  MultiAvailabilityZone:
+    Description: Do you want to Enable Multi Availability Zones?
+    Type: String
+    Default: 'true'
+    AllowedValues:
+    - 'true'
+    - 'false'
+  TcpPort:
+    Description: Enter RDS Listening TCP Port number.
+    Type: Number
+    Default: '3306'
+  PreferredBackupWindow:
+    Description: Enter Preferred Backup Window Time.
+    Type: String
+    Default: 15:00-17:00
+  PreferredMaintenanceWindow:
+    Description: Enter Preferred Maintenance Window Time.
+    Type: String
+    Default: Sun:18:00-Sun:22:00
+  AllocatedStorage:
+    Default: '15'
+    Description: Enter the size of the database (Gb)
+    Type: Number
+    MinValue: '5'
+    MaxValue: '6144'
+    ConstraintDescription: Must be between 5-6144
+  SnapshotOnDelete:
+    Description: Do you want to create a Snapshot on instance delete?
+    Type: String
+    Default: 'true'
+    AllowedValues:
+    - 'true'
+    - 'false'
+  AutoMinorVersionUpgrade:
+    Description: Do you want to allow automatic minor version upgrade?
+    Type: String
+    Default: 'true'
+    AllowedValues:
+    - 'true'
+    - 'false'
+  InstanceType:
+    Description: Select Instance Type.
+    Type: String
+    Default: db.t2.micro
+    ConstraintDescription: Must be a valid EC2 instance type.
+Mappings:
+  Settings:
+    MySQL:
+      Engine: MySQL
+      Version: '5.7'
+Conditions:
+  ConfigureSnapshotOnDelete:
+    Fn::Equals:
+    - Ref: SnapshotOnDelete
+    - 'true'
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Ownership
+      Parameters:
+      - Owner
+    - Label:
+        default: Network Configuration
+      Parameters:
+      - VPC
+      - PrivateSubnet1
+      - PrivateSubnet2
+    - Label:
+        default: RDS Configuration
+      Parameters:
+      - InstanceType
+      - MasterUsername
+      - MasterUserPassword
+      - BackupRetentionPeriod
+      - PreferredBackupWindow
+      - PreferredMaintenanceWindow
+      - SnapshotOnDelete
+      - AllocatedStorage
+      - AutoMinorVersionUpgrade
+      - TcpPort
+      - MultiAvailabilityZone
+    ParameterLabels:
+      Owner:
+        default: Team or Individual Owner
+      InstanceType:
+        default: Instance Type
+      PrivateSubnet1:
+        default: Private Subnet 1
+      PrivateSubnet2:
+        default: Private Subnet 2
+      MasterUsername:
+        default: Master Username
+      MasterUserPassword:
+        default: Master User Password
+      BackupRetentionPeriod:
+        default: Backup Retention Period
+      PreferredBackupWindow:
+        default: Preferred Backup Window
+      PreferredMaintenanceWindow:
+        default: Preferred Maintenance Window
+      AllocatedStorage:
+        default: Allocated Storage
+      AutoMinorVersionUpgrade:
+        default: Auto Minor Version Upgrade
+      TcpPort:
+        default: TCP Port
+      MultiAvailabilityZone:
+        default: Multi Availability Zone?
+      SnapshotOnDelete:
+        default: Snapshot On Delete?
+
+Resources:
+  RDSAccessSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Instance to RDS Access
+      VpcId:
+        Ref: VPC
+      Tags:
+      - Key: Name
+        Value:
+          Fn::Join:
+          - ''
+          - - Ref: AWS::StackName
+            - "-rds"
+      - Key: Owner
+        Value:
+          Ref: Owner
+  AccessSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    DependsOn: RDSAccessSecurityGroup
+    Properties:
+      GroupId:
+        Ref: RDSAccessSecurityGroup
+      IpProtocol: tcp
+      FromPort:
+        Ref: TcpPort
+      ToPort:
+        Ref: TcpPort
+      SourceSecurityGroupId:
+        Ref: RDSAccessSecurityGroup
+  DbSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription:
+        Fn::Join:
+        - ''
+        - - 'RDS Subnet Group for '
+          - Ref: AWS::StackName
+      SubnetIds:
+      - Ref: PrivateSubnet1
+      - Ref: PrivateSubnet2
+      Tags:
+      - Key: Name
+        Value:
+          Ref: AWS::StackName
+      - Key: Owner
+        Value:
+          Ref: Owner
+  DbInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    DependsOn:
+    - DbSubnetGroup
+    - RDSAccessSecurityGroup
+    Properties:
+      AllocatedStorage:
+        Ref: AllocatedStorage
+      AllowMajorVersionUpgrade: 'false'
+      AutoMinorVersionUpgrade:
+        Ref: AutoMinorVersionUpgrade
+      BackupRetentionPeriod:
+        Ref: BackupRetentionPeriod
+      DBInstanceClass:
+        Ref: InstanceType
+      DBInstanceIdentifier:
+        Ref: AWS::StackName
+      DBSubnetGroupName:
+        Ref: DbSubnetGroup
+      Engine:
+        Fn::FindInMap:
+        - Settings
+        - MySQL
+        - Engine
+      EngineVersion:
+        Fn::FindInMap:
+        - Settings
+        - MySQL
+        - Version
+      MasterUsername:
+        Ref: MasterUsername
+      MasterUserPassword:
+        Ref: MasterUserPassword
+      MultiAZ:
+        Ref: MultiAvailabilityZone
+      Port:
+        Ref: TcpPort
+      PreferredBackupWindow:
+        Ref: PreferredBackupWindow
+      PreferredMaintenanceWindow:
+        Ref: PreferredMaintenanceWindow
+      PubliclyAccessible: 'false'
+      StorageEncrypted: 'false'
+      StorageType: gp2
+      VPCSecurityGroups:
+      - Ref: RDSAccessSecurityGroup
+      Tags:
+      - Key: Name
+        Value:
+          Ref: AWS::StackName
+      - Key: Owner
+        Value:
+          Ref: Owner
+
+Outputs:
+  Owner:
+    Description: Team or Individual that Owns this Formation.
+    Value:
+      Ref: Owner
+  VPC:
+    Description: VPC Used
+    Value:
+      Ref: VPC
+  RDSHostname:
+    Description: RDS Hostname
+    Value:
+      Fn::GetAtt:
+      - DbInstance
+      - Endpoint.Address
+  RDSPort:
+    Description: RDS Port
+    Value:
+      Fn::GetAtt:
+      - DbInstance
+      - Endpoint.Port
+  DbSubnetGroup:
+    Description: DB Subnet Group Created.
+    Value:
+      Ref: DbSubnetGroup
+  RDSAccessSecurityGroup:
+    Description: RDS Access Security Group Created.
+    Value:
+      Ref: RDSAccessSecurityGroup
+  PrivateSubnet1:
+    Description: Private Subnet 1 Deployment
+    Value:
+      Ref: PrivateSubnet1
+  PrivateSubnet2:
+    Description: Private Subnet 2 Deployment
+    Value:
+      Ref: PrivateSubnet2
+  BackupRetentionPeriod:
+    Description: Backup Retention Period in Days
+    Value:
+      Ref: BackupRetentionPeriod
+  MultiAvailabilityZone:
+    Description: Enable Multi Availability Zones?
+    Value:
+      Ref: MultiAvailabilityZone
+  SnapshotOnDelete:
+    Description: Create Snapshot on Delete?
+    Value:
+      Ref: SnapshotOnDelete
+  PreferredBackupWindow:
+    Description: Preferred Backup Window
+    Value:
+      Ref: PreferredBackupWindow
+  PreferredMaintenanceWindow:
+    Description: Preferred Maintenance Window
+    Value:
+      Ref: PreferredMaintenanceWindow
+  AllocatedStorage:
+    Description: Allocated Storage in GB
+    Value:
+      Ref: AllocatedStorage
+      _________________________
+      Parameters:
+
+Under Ownership, Simply write your name or the Team name deploying the Database Stack
+Network Configuration:
+
+VPC: Select the VPC we created with the first stack: ThreeTierArch-Project09-cloudVPC
+Private Subnet 1: Put this in the Private subnet 10.0.64.0/20
+Private Subnet 2: Put this in the Private subnet 10.0.80.0/20
+Public Network ACL: Navigate to VPC>Network ACLs and get the Network ACL ID number
+
+Leave everything else as default and click Next
+Review your template and Click Create stack
+*Important: This portion may take 5–10 minutes to deploy.
+
+5) Create a NAT gatway to direct all your traffic.
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: NAT Gateway
+Parameters:
+  Owner:
+    Description: Enter Team or Individual Name Responsible for the Stack.
+    Type: String
+    Default: FirstName LastName
+  VPC:
+    Description: Select VPC.
+    Type: AWS::EC2::VPC::Id
+  PublicSubnet:
+    Description: Public Subnet to Attach NAT Gateway.
+    Type: AWS::EC2::Subnet::Id
+  PrivateRouteTable:
+    Description: Enter Private Route Table ID.
+    Type: String
+    Default: rtb-0000000
+  PublicNetworkAcl:
+    Description: Enter Public Network ACL ID.
+    Type: String
+    Default: acl-0000000
+  AllowNatRuleNumber:
+    Description: Enter Public Network ACL Rule Number to Allow Return NAT Traffic.
+    Type: Number
+    Default: '120'
+Resources:
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    DependsOn: NatEIP
+    Properties:
+      AllocationId:
+        Fn::GetAtt:
+        - NatEIP
+        - AllocationId
+      SubnetId:
+        Ref: PublicSubnet
+  NatEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+  InboundPublicNetworkAclAllowNat:
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      NetworkAclId:
+        Ref: PublicNetworkAcl
+      RuleNumber:
+        Ref: AllowNatRuleNumber
+      Protocol: '6'
+      RuleAction: allow
+      Egress: 'false'
+      CidrBlock: 0.0.0.0/0
+      PortRange:
+        From: '1024'
+        To: '65535'
+Outputs:
+  Owner:
+    Description: Team or Individual that Owns this Formation.
+    Value:
+      Ref: Owner
+  VPC:
+    Description: VPC Used
+    Value:
+      Ref: VPC
+  NatEIP:
+    Description: NAT Elastic IP Address
+    Value:
+      Ref: NatEIP
+  PublicNetworkACLRuleNumbers:
+    Description: Public Network ACL Rules Number Created.
+    Value:
+      Fn::Join:
+      - ''
+      - - Inbound (
+        - Ref: AllowNatRuleNumber
+        - ")"
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Ownership
+      Parameters:
+      - Owner
+    - Label:
+        default: Network Configuration
+      Parameters:
+      - VPC
+      - PublicSubnet
+      - PrivateRouteTable
+      - PublicNetworkAcl
+      - AllowNatRuleNumber
+    ParameterLabels:
+      Owner:
+        default: Team or Individual Owner
+      PublicSubnet:
+        default: Public Subnet
+      PrivateRouteTable:
+        default: Private Route Table
+      PublicNetworkAcl:
+        default: Public Network ACL
+      AllowNatRuleNumber:
+        default: Public Network ACL Rule Number
